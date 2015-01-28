@@ -11,6 +11,7 @@ namespace AppBundle;
 use AppBundle\Entity\Camera;
 use Doctrine\Common\Persistence\ObjectManager;
 use Doctrine\ORM\Id\UuidGenerator;
+use AppBundle\Exception\CaptureException;
 
 /**
  * Description of CameraManager
@@ -20,7 +21,7 @@ use Doctrine\ORM\Id\UuidGenerator;
 class CameraManager
 {
     const RUNNING = "running";
-    const STOPPED = "stopped";
+    const BROKEN = "broken";
     
     private $repo;
     private $om;
@@ -44,6 +45,10 @@ class CameraManager
         }
         
         $camera = new Camera($url, $loopDuration, null);
+        
+        // clean if necessary
+        Utils::delTree($this->getStoragePathForCamera($camera));
+        
         $this->startCameraProcess($camera);
         return $camera;
     }
@@ -58,6 +63,8 @@ class CameraManager
         
         $this->om->remove($camera);
         $this->om->flush();
+        
+        Utils::delTree($this->getStoragePathForCamera($camera));
     }
     
     public function getCameraStatus($url)
@@ -66,12 +73,12 @@ class CameraManager
         
         exec("tasklist /v /FI \"PID eq {$camera->getPid()}\" /FO:list", $output);
         
-        if (isset($output[6]) && (strpos($output[6], "Running") > 0))
+        if (isset($output[6]) && ((strpos($output[6], "Running") > 0) || (strpos($output[6], "Unknown") > 0)))
         {
             return self::RUNNING;
         }
         
-        return self::STOPPED;
+        return self::BROKEN;
     }
     
     public function getCameraLog($url)
@@ -89,8 +96,18 @@ class CameraManager
         }
     }
     
-    public function startCapture($url, $startTime, $stopTime)
+    public function startCapture($url, $from, $to)
     {
+        if ($from > $to)
+        {
+            throw new CaptureException('"from" should come before "to"');
+        }
+
+        if ($to > (time() + 300))
+        {
+            throw new CaptureException('Max time to record in the future is 360s');
+        }
+                
         $camera = $this->getCameraByUrlOrThrowException($url);
         $storagePath = $this->getStoragePathForCamera($camera);
         $folder = new \DirectoryIterator($storagePath);
@@ -100,23 +117,26 @@ class CameraManager
             sleep(1);
             $list = $this->getRecordingListDescending($folder);
         }
-        while(key($list) < $stopTime);
+        while(key($list) < $to);
         
         $list = $this->getRecordingListDescending($folder);
-        
-        $captureFiles = array();
-        //print_r($list);
-        echo 's: ' . $startTime . ' - t: '. $stopTime . "\n";
                 
+        $captureFiles = array();
+        
         foreach($list as $mtime => $file)
         {
             if (
-                ($mtime > $startTime)
-                && (($mtime - $this->segmentTime) < $stopTime)
+                ($mtime > $from)
+                && ($mtime < $to)
             )
             {
                 array_push($captureFiles, $file);
             }
+        }
+        
+        if (empty($captureFiles))
+        {
+            throw new CaptureException('Request timeframe no longer available.');
         }
 
         $captureFilePrefix = $this->getStoragePathForCaptures() . $captureUuid;
@@ -177,7 +197,7 @@ class CameraManager
     private function startCameraProcess(Camera $camera)
     {
         $url = $camera->getUrl();
-        $totalSegments = $camera->getLoopDuration() * ceil(60 / $this->segmentTime);
+        $totalSegments = $camera->getLoopDuration() * ceil(60 / $this->segmentTime) + 1;
         
         $path = $this->getStoragePathForCamera($camera);
         
@@ -188,7 +208,7 @@ class CameraManager
         $command = "ffmpeg -i {$url}"
         . " -acodec copy -vcodec copy -map 0"
         . " -f segment -segment_wrap {$totalSegments} -segment_time {$this->segmentTime} "
-        . " -loglevel warning"
+        . " -loglevel error"
         . " {$path}loop%03d.h264"
         . " 2^> {$path}log.txt";
         
