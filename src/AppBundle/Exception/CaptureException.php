@@ -13,7 +13,7 @@ namespace AppBundle\Exception;
  *
  * @author Gert
  */
-class CameraNotFoundException extends \Exception
+class CaptureException extends \Exception
 {
     //put your code here
 }

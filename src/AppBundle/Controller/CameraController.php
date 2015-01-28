@@ -26,6 +26,16 @@ class CameraController extends Controller
         $url = $request->request->get('url');
         $loopDuration = $request->request->get('loop_duration');
         
+        if (! $url || ! $loopDuration)
+        {
+            return new JsonResponse([
+                "error" => [
+                    "code" => 500,
+                    "message" => 'Required parameter url or loop_duration not provided'
+                ]
+            ], 500);
+        }
+        
         $camera = $this->get('app.camera_manager')->startCamera($url, $loopDuration);
          
         return new JsonResponse([
@@ -56,14 +66,20 @@ class CameraController extends Controller
     public function statusAction($url)
     {
         $status = null;
+        $url = base64_decode($url);
         
         try {
             $status = $this->get('app.camera_manager')->getCameraStatus($url);
             $log = $this->get('app.camera_manager')->getCameraLog($url);
         }
-        catch(Exception\CameraNotFoundException $e)
+        catch(AppBundle\Exception\CameraNotFoundException $e)
         {
-            throw $this->createNotFoundException('Camera not found : ' . $e->getMessage());
+            return new JsonResponse([
+                "error" => [
+                    "code" => 404,
+                    "message" => 'Camera not found : ' . $e->getMessage()
+                ]
+            ], 404);
         }
         
         return new JsonResponse([
@@ -79,10 +95,31 @@ class CameraController extends Controller
     public function captureAction(Request $request)
     {
         $url = $request->request->get('url');
-        $from = strtotime($request->request->get('from'));
-        $to = strtotime($request->request->get('to'));
+        $from = $request->request->get('from');
+        $to = $request->request->get('to');
         
-        $uuid = $this->get('app.camera_manager')->startCapture($url, $from, $to);
+        $from = is_numeric($from) ? $from : strtotime($from);
+        $to = is_numeric($to) ? $to : strtotime($to);
+        
+        try {
+            $uuid = $this->get('app.camera_manager')->startCapture($url, $from, $to);
+        }
+        catch(AppBundle\Exception\CameraNotFoundException $e) {
+            return new JsonResponse([
+                "error" => [
+                    "code" => 404,
+                    "message" => 'Camera not found : ' . $e->getMessage()
+                ]
+            ], 404);
+        }
+        catch (AppBundle\Exception\CaptureException $e) {
+            return new JsonResponse([
+                "error" => [
+                    "code" => 500,
+                    "message" => 'Problem capturing: ' . $e->getMessage()
+                ]
+            ], 500);
+        }
         
         return new JsonResponse([
             "uuid" => $uuid

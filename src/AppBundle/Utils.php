@@ -54,4 +54,21 @@ class Utils
         fclose ($handle);
         return array_reverse($text);
     }
+    
+    /**
+     * Recursively delete folder
+     * 
+     * @param type $dir
+     * @return type
+     */
+    public static function delTree($dir)
+    { 
+        $files = array_diff(scandir($dir), array('.','..')); 
+        
+        foreach ($files as $file) { 
+            (is_dir("$dir/$file")) ? delTree("$dir/$file") : unlink("$dir/$file"); 
+        } 
+        
+        return rmdir($dir); 
+    }
 }
