@@ -7,7 +7,7 @@
     <services>
         <service id="app.camera_manager" class="AppBundle\CameraManager">
             <argument type="service" id="doctrine.orm.entity_manager" />
-            <argument>%camera_manager.storage_path%</argument>
+            <argument>%camera_manager_storage_path%</argument>
         </service>
     </services>
 
