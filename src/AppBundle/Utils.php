@@ -62,7 +62,9 @@ class Utils
      * @return type
      */
     public static function delTree($dir)
-    { 
+    {
+        if (! is_dir($dir)) return;
+
         $files = array_diff(scandir($dir), array('.','..')); 
         
         foreach ($files as $file) { 
